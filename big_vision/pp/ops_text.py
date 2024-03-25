@@ -176,6 +176,16 @@ def get_pp_tokenize(
   return _pp_tokenize
 
 
+@Registry.register("preprocess_ops.laion400m")
+def get_laion400m(outkey="caption"):
+  """Extracts laion400m's captions from nested dict."""
+
+  def _pp_laion400m(data):
+    data[outkey] = data["caption"]
+    return data
+
+  return _pp_laion400m
+
 @Registry.register("preprocess_ops.coco_captions")
 def get_coco_captions(outkey="captions"):
   """Extracts coco's captions from nested dict."""
