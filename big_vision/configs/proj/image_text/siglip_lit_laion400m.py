@@ -31,7 +31,7 @@ def get_config(arg=None):
   """The base configuration."""
   arg = bvcc.parse_arg(
       arg, res=224, runlocal=False, token_len=16, txt='bert_base', img='B/16',
-      init='', img_head=False, batch_size=512)# 32_768)
+      init='', img_head=False, batch_size=16_384)
   img_name, img_init = common.inits[arg.img]
   txt_name, txt_init = common.inits[arg.txt]
   config = ConfigDict()
@@ -97,6 +97,9 @@ def get_config(arg=None):
     config.optax_name = 'big_vision.scale_by_adafactor'
     config.optax = dict(beta2_cap=0.95) # TO_ADD
 
+  # config.mesh = [("data",1),("tensor",4),("model",1),("sequence",1)]
+  config.mesh = [("data",-1)]
+  config.sharding_strategy = [('.*', 'fsdp(axis="data")')]
 
   config.lr = 1e-4
   config.wd = 1e-7
