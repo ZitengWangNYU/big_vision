@@ -35,10 +35,7 @@ from ml_collections import ConfigDict
 def get_config(arg=None):
   """The base configuration."""
   arg = bvcc.parse_arg(
-      arg, res=224, runlocal=False, token_len=16, txt='bert_base', img='B/16',
-      init='', img_head=False, batch_size=4096)
-  img_name, img_init = common.inits[arg.img]
-  txt_name, txt_init = common.inits[arg.txt]
+      arg, res=224, runlocal=False, token_len=16, init='', img_head=False, batch_size=512)
   config = ConfigDict()
 
   config.input = {}
@@ -47,25 +44,40 @@ def get_config(arg=None):
   config.input.shuffle_buffer_size = 250_000  if not arg.runlocal else 50
   config.input.pack = True # TO_DETERMINE: pack or not pack? TODO: examine the variance of sequence length
 
-  # config.total_steps = 80006 if not arg.runlocal else 1 # 1 epoch
-  config.total_steps = 45 if not arg.runlocal else 1 # DEBUG 183864/4096=44.888671875
+  config.total_steps = 6000 if not arg.runlocal else 1 # DEBUG 3B/512=5_859_375
 
   config.init_shapes = [(1, arg.res, arg.res, 3), (1, arg.token_len,)] # TO_LEARN: where is it used?
   config.init_types = ['float32', 'int32'] # TO_LEARN: where is it used?
+  VARIANT, RES = 'B/16', 224
+  CKPT, TXTVARIANT, EMBDIM, SEQLEN, VOCAB = {
+      ('B/16', 224): ('/mnt/vlm-pd/ckpts/siglip/webli_en_b16_224_63724782.npz', 'B', 768, 64, 32_000),
+      ('B/16', 256): ('/mnt/vlm-pd/ckpts/siglip/webli_en_b16_256_60500360.npz', 'B', 768, 64, 32_000),
+      ('B/16', 384): ('/mnt/vlm-pd/ckpts/siglip/webli_en_b16_384_68578854.npz', 'B', 768, 64, 32_000),
+      ('B/16', 512): ('/mnt/vlm-pd/ckpts/siglip/webli_en_b16_512_68580893.npz', 'B', 768, 64, 32_000),
+      ('L/16', 256): ('/mnt/vlm-pd/ckpts/siglip/webli_en_l16_256_60552751.npz', 'L', 1024, 64, 32_000),
+      ('L/16', 384): ('/mnt/vlm-pd/ckpts/siglip/webli_en_l16_384_63634585.npz', 'L', 1024, 64, 32_000),
+      ('So400m/14', 224): ('/mnt/vlm-pd/ckpts/siglip/webli_en_so400m_224_57633886.npz', 'So400m', 1152, 16, 32_000),
+      ('So400m/14', 384): ('/mnt/vlm-pd/ckpts/siglip/webli_en_so400m_384_58765454.npz', 'So400m', 1152, 64, 32_000),
+      ('B/16-i18n', 256): ('/mnt/vlm-pd/ckpts/siglip/webli_i18n_b16_256_66117334.npz', 'B', 768, 64, 250_000),
+  }[VARIANT, RES]
 
-  if arg.init:
-    vocab_path = arg.init.rsplit('.', 1)[0] + '.txt'
-  else:
-    vocab_path = f'{txt_init}/vocab.txt'
+  TOKENIZERS = {
+      32_000: 'c4_en',
+      250_000: 'mc4',
+  }
+
   tokenizer = lambda inkey: (
-      f'bert_tokenize(inkey="{inkey}", max_len={arg.token_len}, '
-      f'vocab_path="{vocab_path}")')
-  config.input.pp = (
-      f'decode|resize({arg.res})|flip_lr|randaug(2,10)|value_range(-1,1)'
-      f'|flatten|{tokenizer("caption")}|keep("image", "labels")'
+      # f'tokenize(max_len={SEQLEN}, model="{TOKENIZERS[VOCAB]}", eos="sticky", pad_value=1, inkey="{inkey}")'
+      f'tokenize(max_len={SEQLEN}, model="{TOKENIZERS[VOCAB]}",sample_if_multi=False, lower=False, eos="sticky", pad_value=1, inkey="{inkey}")'
   )
+  pp_laion400m = (
+      f'decode|resize({RES})|flip_lr|randaug(2,10)|value_range(-1,1)'
+      f'|flatten|{tokenizer("caption")}'
+  )
+  config.input.pp = pp_laion400m
+
   config.pp_modules = ['ops_general', 'ops_image', 'ops_text',
-                       'proj.flaxformer.bert_ops', 'archive.randaug']
+                       'archive.randaug'] 
 
   config.log_training_steps = 50
   config.ckpt_steps = 1000
@@ -73,41 +85,28 @@ def get_config(arg=None):
   # Model section
   config.model_name = 'proj.image_text.two_towers'
   config.model_load = {}
-  if arg.init:
-    config.model_init = arg.init
-  else:
-    config.model_init = {'image': img_init, 'text': txt_init}
-    config.model_load['txt_load_kw'] = {'dont_load': ['head/kernel', 'head/bias']}
-    if not arg.img_head:
-      config.model_load['img_load_kw'] = {'dont_load': ['head/kernel', 'head/bias']}
+  config.model_init = CKPT
   config.model = ConfigDict()
   config.model.image_model = 'vit'
   config.model.text_model = 'proj.image_text.text_transformer'
-  config.model.image = ConfigDict({
-      'variant': img_name,
-      'pool_type': 'tok',
-      'head_zeroinit': False,
-  })
-  config.model.text = ConfigDict({
-      'config': txt_name,
-      'head_zeroinit': False,
-  })
+  config.model.image = dict(variant=VARIANT, pool_type='map')
+  config.model.text = dict(variant=TXTVARIANT, vocab_size=VOCAB)
+
+  config.model.out_dim = (None, EMBDIM)  # (image_out_dim, text_out_dim)
   config.model.temperature_init = 10.0
-  dim = {'B': 768, 'L': 1024}[arg.img[0]]
-  config.model.out_dim = (dim if arg.img_head else None, dim)  # (image_out_dim, text_out_dim)
   config.model.bias_init = -10.0
 
-  if txt_name == 'base':
+  if VARIANT[0] == 'B':
     config.optax_name = 'scale_by_adam'
   else:
     config.optax_name = 'big_vision.scale_by_adafactor'
+  config.optax = dict(beta2_cap=0.95)
 
-  config.lr = 0.001
-  config.wd = 0.01
+  config.lr = 1e-3 if arg.batch_size!=32_768 else 3e-4
+  config.wd = 1e-4 if arg.batch_size!=32_768 else 3e-5
   warmup_steps = max(int(0.03 * config.total_steps), 100)
   config.schedule = [
-      ('img/.*', None),  # Freezes image tower.
-      ('.*', dict(decay_type='cosine', warmup_steps=warmup_steps)),
+      ('.*', dict(decay_type='cosine', warmup_steps=warmup_steps, mult=1.0)),# 1e-6)), # TO_DETERMINE: 1.0 or a very small value?
   ]
 
   config.grad_clip_norm = 1.0

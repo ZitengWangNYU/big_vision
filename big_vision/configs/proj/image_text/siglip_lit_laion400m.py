@@ -31,7 +31,7 @@ def get_config(arg=None):
   """The base configuration."""
   arg = bvcc.parse_arg(
       arg, res=224, runlocal=False, token_len=16, txt='bert_base', img='B/16',
-      init='', img_head=False, batch_size=16_384)
+      init='', img_head=False, batch_size=8_192)
   img_name, img_init = common.inits[arg.img]
   txt_name, txt_init = common.inits[arg.txt]
   config = ConfigDict()
@@ -91,7 +91,7 @@ def get_config(arg=None):
   config.model.bias_init = -10.0
 
   if txt_name == 'base':
-    config.optax_name = 'scale_by_adam'
+    config.optax_name = 'scale_by_lion' # scale_by_adam
     config.optax = dict(b2=0.95) # TO_ADD
   else:
     config.optax_name = 'big_vision.scale_by_adafactor'
@@ -99,14 +99,14 @@ def get_config(arg=None):
 
   # config.mesh = [("data",1),("tensor",4),("model",1),("sequence",1)]
   config.mesh = [("data",-1)]
-  config.sharding_strategy = [('.*', 'fsdp(axis="data")')]
+  config.sharding_strategy = [('.*', 'fsdp(axis="data", min_size_to_shard_mb=4)')]
 
   config.lr = 1e-4
-  config.wd = 1e-7
+  config.wd = 1e-7 # TODO: implement decoupled weight decay
   warmup_steps = max(int(0.1 * config.total_steps), 100) # 6_500 linearly warmup steps
   config.schedule = [
       ('img/.*', None),  # Freezes image tower.
-      ('.*', dict(decay_type='cosine', warmup_steps=warmup_steps,mult=1e-6)), # TO_DETERMINE: 1.0 or a very small value?
+      ('.*', dict(decay_type='cosine', warmup_steps=warmup_steps,mult=1.0)),# 1e-6)), # TO_DETERMINE: 1.0 or a very small value?
   ]
 
   config.grad_clip_norm = 1.0
