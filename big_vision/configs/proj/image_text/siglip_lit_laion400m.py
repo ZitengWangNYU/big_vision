@@ -31,7 +31,7 @@ def get_config(arg=None):
   """The base configuration."""
   arg = bvcc.parse_arg(
       arg, res=224, runlocal=False, token_len=16, txt='bert_base', img='B/16',
-      init='', img_head=False, batch_size=8_192)
+      init='', img_head=False, batch_size=16_384)
   img_name, img_init = common.inits[arg.img]
   txt_name, txt_init = common.inits[arg.txt]
   config = ConfigDict()
@@ -41,7 +41,8 @@ def get_config(arg=None):
   config.input.batch_size = arg.batch_size if not arg.runlocal else 32
   config.input.shuffle_buffer_size = 250_000  if not arg.runlocal else 50
 
-  config.total_steps = 65_000 if not arg.runlocal else 1
+  config.total_steps = 130_000 if not arg.runlocal else 1
+  # config.total_steps = 65_000 if not arg.runlocal else 1
 
   config.init_shapes = [(1, arg.res, arg.res, 3), (1, arg.token_len,)]
   config.init_types = ['float32', 'int32']
@@ -69,6 +70,7 @@ def get_config(arg=None):
   if arg.init:
     config.model_init = arg.init
   else:
+    # config.model_init = {'image': img_init, 'text': None}
     config.model_init = {'image': img_init, 'text': txt_init}
     config.model_load['txt_load_kw'] = {'dont_load': ['head/kernel', 'head/bias']}
     if not arg.img_head:
@@ -116,6 +118,10 @@ def get_config(arg=None):
       pp_img=f'resize({arg.res})|value_range(-1, 1)',
       pp_txt=tokenizer('texts'),
       log_steps=1000,
+  )
+
+  config.evals.zeroshot_imagenet_v2 = common.get_disclf(
+    sz=224, pp_txt=tokenizer('texts'), dataset_names=('imagenet_v2',),
   )
 
   return config

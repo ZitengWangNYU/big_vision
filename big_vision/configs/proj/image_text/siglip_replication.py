@@ -35,16 +35,18 @@ from ml_collections import ConfigDict
 def get_config(arg=None):
   """The base configuration."""
   arg = bvcc.parse_arg(
-      arg, res=224, runlocal=False, token_len=16, init='', img_head=False, batch_size=512)
+      arg, res=224, runlocal=False, token_len=16, init='', img_head=False, batch_size=1024)
   config = ConfigDict()
 
   config.input = {}
-  config.input.data = dict(name='laion400m/images', split='train')
+  config.input.data = dict(name='laion400m/images', split='train', data_dir='gs://us-central2-storage/tensorflow_datasets')
   config.input.batch_size = arg.batch_size if not arg.runlocal else 32
   config.input.shuffle_buffer_size = 250_000  if not arg.runlocal else 50
-  config.input.pack = True # TO_DETERMINE: pack or not pack? TODO: examine the variance of sequence length
+  # config.input.pack = True # TO_DETERMINE: pack or not pack? TODO: examine the variance of sequence length, compare num of data before and after packing
 
-  config.total_steps = 6000 if not arg.runlocal else 1 # DEBUG 3B/512=5_859_375
+  # num_tpu_chips/samples_seen/batch_size->ETA: 4/3B/512->17d8h; 4/3B/1024->14d12h; 4/3B/2048->OOM; 4/3B/4096->OOM; 4/3B/32_768->OOM
+  step_dict = {512: 5_859_375, 1024: 2_929_688, 2048: 1_464_844, 4096: 732_422, 32_768: 91_553}
+  config.total_steps = step_dict[arg.batch_size] if not arg.runlocal else 1
 
   config.init_shapes = [(1, arg.res, arg.res, 3), (1, arg.token_len,)] # TO_LEARN: where is it used?
   config.init_types = ['float32', 'int32'] # TO_LEARN: where is it used?
@@ -66,15 +68,22 @@ def get_config(arg=None):
       250_000: 'mc4',
   }
 
-  tokenizer = lambda inkey: (
-      # f'tokenize(max_len={SEQLEN}, model="{TOKENIZERS[VOCAB]}", eos="sticky", pad_value=1, inkey="{inkey}")'
-      f'tokenize(max_len={SEQLEN}, model="{TOKENIZERS[VOCAB]}",sample_if_multi=False, lower=False, eos="sticky", pad_value=1, inkey="{inkey}")'
+  tokenizer = lambda inkey, outkey: (
+      f'tokenize(max_len={SEQLEN}, model="{TOKENIZERS[VOCAB]}", '
+      f'eos="sticky", pad_value=1, inkey="{inkey}", outkey="{outkey}")'
   )
-  pp_laion400m = (
-      f'decode|resize({RES})|flip_lr|randaug(2,10)|value_range(-1,1)'
-      f'|flatten|{tokenizer("caption")}'
-  )
+  pp_image = (f'resize({RES})|flip_lr|randaug(2,10)|value_range(-1,1)')
+  pp_laion400m = (f'decode|{pp_image}|'
+                  'choice(inkey="caption", outkey="text")|'
+                  f'{tokenizer("text", "labels")}|keep("image", "labels")')
   config.input.pp = pp_laion400m
+
+  # # replace the data and pp with coco_captions for faster debugging
+  # config.input.data = dict(name='coco_captions', split='train', data_dir='gs://us-central2-storage/tensorflow_datasets')
+  # pp_coco = (f'decode|{pp_image}|'
+  #            'coco_captions("captions")|choice(inkey="captions", outkey="text")|'
+  #            f'{tokenizer("text", "labels")}|keep("image", "labels")')
+  # config.input.pp = pp_coco
 
   config.pp_modules = ['ops_general', 'ops_image', 'ops_text',
                        'archive.randaug'] 
@@ -85,7 +94,7 @@ def get_config(arg=None):
   # Model section
   config.model_name = 'proj.image_text.two_towers'
   config.model_load = {}
-  config.model_init = CKPT
+  # config.model_init = CKPT # if None, randomly initialized
   config.model = ConfigDict()
   config.model.image_model = 'vit'
   config.model.text_model = 'proj.image_text.text_transformer'
@@ -98,9 +107,13 @@ def get_config(arg=None):
 
   if VARIANT[0] == 'B':
     config.optax_name = 'scale_by_adam'
+    config.optax = dict(b2=0.95)
   else:
     config.optax_name = 'big_vision.scale_by_adafactor'
-  config.optax = dict(beta2_cap=0.95)
+    config.optax = dict(beta2_cap=0.95)
+
+  # config.mesh = [("data",-1)]
+  # config.sharding_strategy = [('.*', 'fsdp(axis="data", min_size_to_shard_mb=4)')]
 
   config.lr = 1e-3 if arg.batch_size!=32_768 else 3e-4
   config.wd = 1e-4 if arg.batch_size!=32_768 else 3e-5
@@ -114,8 +127,13 @@ def get_config(arg=None):
   config.evals = {}
   config.evals.retrieval_coco = common.get_coco(
       pp_img=f'resize({arg.res})|value_range(-1, 1)',
-      pp_txt=tokenizer('texts'),
+      pp_txt=tokenizer('texts','labels'),
       log_steps=1000,
+  )
+  config.evals.zeroshot_imagenet_v2 = common.get_disclf(
+    sz=224, pp_txt=tokenizer('texts','labels'), 
+    dataset_names=('imagenet2012','imagenet_v2','imagenet2012_real'),
+    log_steps=1000,
   )
 
   return config
