@@ -121,7 +121,9 @@ def get_config(arg=None):
   )
 
   config.evals.zeroshot_imagenet_v2 = common.get_disclf(
-    sz=224, pp_txt=tokenizer('texts'), dataset_names=('imagenet_v2',),
+    sz=224, pp_txt=tokenizer('texts'), 
+    dataset_names=('imagenet2012','imagenet_v2','imagenet2012_real'),
+    log_steps=1000,
   )
 
   return config

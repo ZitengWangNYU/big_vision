@@ -119,7 +119,7 @@ def get_config(arg=None):
   config.wd = 1e-4 if arg.batch_size!=32_768 else 3e-5
   warmup_steps = max(int(0.03 * config.total_steps), 100)
   config.schedule = [
-      ('.*', dict(decay_type='cosine', warmup_steps=warmup_steps, mult=1.0)),# 1e-6)), # TO_DETERMINE: 1.0 or a very small value?
+      ('.*', dict(decay_type='cosine', warmup_steps=warmup_steps)),
   ]
 
   config.grad_clip_norm = 1.0

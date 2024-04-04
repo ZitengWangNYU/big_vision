@@ -45,6 +45,7 @@ from ml_collections import config_flags
 import numpy as np
 import optax
 import tensorflow as tf
+import wandb
 
 from tensorflow.io import gfile
 
@@ -119,6 +120,18 @@ def main(argv):
 
   # Allow for things like timings as early as possible!
   u.chrono.inform(measure=mw.measure, write_note=write_note)
+
+  # Initialize wandb.
+  wandb.init(
+    project="cambrian_vlm",
+    entity="ziteng_wang",
+    tags=["siglip"],
+    name=workdir.split("/")[-1] if workdir else "siglip_temp_experiment",
+    job_type="train",
+    # id=experiment_id,
+    config=config,
+    resume="allow",
+  )
 
 ################################################################################
 #                                                                              #
@@ -319,6 +332,8 @@ def main(argv):
     measurements["l2_params"] = jnp.sqrt(sum([jnp.sum(p * p) for p in ps]))
     us = jax.tree_leaves(updates)
     measurements["l2_updates"] = jnp.sqrt(sum([jnp.sum(u * u) for u in us]))
+    measurements["lr_sched"] = sched_fns[0](u.put_cpu(step_count))
+    measurements['step'] = step_count
 
     return {"params": params, "opt": opt}, measurements
 
@@ -450,6 +465,7 @@ def main(argv):
       with u.chrono.log_timing("z/secs/update0", noop=step > first_step + 1):
         with mesh, nn.logical_axis_rules(sharding_rules):
           train_state, measurements = update_fn(train_state, rng_loop, batch)
+          wandb.log(measurements)
 
     # On the first host, let's always profile a handful of early steps.
     if jax.process_index() == 0:
@@ -499,6 +515,7 @@ def main(argv):
           with mesh, nn.logical_axis_rules(sharding_rules):
             for key, value in evaluator.run(train_state):
               mw.measure(f"{prefix}{key}", jax.device_get(value))
+              wandb.log({f"{prefix}{key}": jax.device_get(value)})
         u.chrono.resume()
     mw.step_end()
 
