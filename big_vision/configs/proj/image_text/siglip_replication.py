@@ -45,7 +45,7 @@ def get_config(arg=None):
   # config.input.pack = True # TO_DETERMINE: pack or not pack? TODO: examine the variance of sequence length, compare num of data before and after packing
 
   # num_tpu_chips/samples_seen/batch_size->ETA: 4/3B/512->17d8h; 4/3B/1024->14d12h; 4/3B/2048->OOM; 4/3B/4096->OOM; 4/3B/32_768->OOM
-  step_dict = {512: 5_859_375, 1024: 2_929_688, 2048: 1_464_844, 4096: 732_422, 32_768: 91_553}
+  step_dict = {512: 5_859_375, 1024: 2_929_688, 2048: 1_464_844, 4096: 732_422, 8_192: 366_211, 16_384: 183_105, 32_768: 91_553}
   config.total_steps = step_dict[arg.batch_size] if not arg.runlocal else 1
 
   config.init_shapes = [(1, arg.res, arg.res, 3), (1, arg.token_len,)] # TO_LEARN: where is it used?
