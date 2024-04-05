@@ -14,7 +14,7 @@ def get_config(arg=None):
   """Returns the base config."""
   config = bvcc.parse_arg(arg,
                           runlocal=False,
-                          total_steps=80_006,
+                          total_steps=366_500,
                           batch_size=8*1024,
                           warmup_steps=10_000,
                           )
@@ -35,7 +35,7 @@ def get_config(arg=None):
             f'eos="sticky", inkey="{inkey}", outkey="{outkey}")')
 
   pp_laion = (f'decode|{pp_image}|'
-              'laion400m("caption")|choice(inkey="caption", outkey="text")|'
+              'choice(inkey="caption", outkey="text")|'
               f'{tokenizer("text", "labels")}|keep("image", "labels")')
   config.input.pp = pp_laion
   config.input.data = dict(name='laion400m/images', split='train')  # num_examples=82_783
