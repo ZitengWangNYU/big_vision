@@ -35,7 +35,7 @@ from ml_collections import ConfigDict
 def get_config(arg=None):
   """The base configuration."""
   arg = bvcc.parse_arg(
-      arg, res=224, runlocal=False, token_len=16, init='', img_head=False, batch_size=1024)
+      arg, res=224, runlocal=False, token_len=16, init='', img_head=False, batch_size=1024, debug=False)
   config = ConfigDict()
 
   config.input = {}
@@ -78,13 +78,6 @@ def get_config(arg=None):
                   f'{tokenizer("text", "labels")}|keep("image", "labels")')
   config.input.pp = pp_laion400m
 
-  # # replace the data and pp with coco_captions for faster debugging
-  # config.input.data = dict(name='coco_captions', split='train', data_dir='gs://us-central2-storage/tensorflow_datasets')
-  # pp_coco = (f'decode|{pp_image}|'
-  #            'coco_captions("captions")|choice(inkey="captions", outkey="text")|'
-  #            f'{tokenizer("text", "labels")}|keep("image", "labels")')
-  # config.input.pp = pp_coco
-
   config.pp_modules = ['ops_general', 'ops_image', 'ops_text',
                        'archive.randaug'] 
 
@@ -125,15 +118,23 @@ def get_config(arg=None):
   config.grad_clip_norm = 1.0
 
   config.evals = {}
-  config.evals.retrieval_coco = common.get_coco(
-      pp_img=f'resize({arg.res})|value_range(-1, 1)',
-      pp_txt=tokenizer('texts','labels'),
+  if not arg.debug:
+    config.evals.retrieval_coco = common.get_coco(
+        pp_img=f'resize({arg.res})|value_range(-1, 1)',
+        pp_txt=tokenizer('texts','labels'),
+        log_steps=1000,
+    )
+    config.evals.zeroshot_imagenet = common.get_disclf(
+      sz=224, pp_txt=tokenizer('texts','labels'), 
+      dataset_names=('imagenet2012','imagenet_v2','imagenet2012_real'),
       log_steps=1000,
-  )
-  config.evals.zeroshot_imagenet_v2 = common.get_disclf(
-    sz=224, pp_txt=tokenizer('texts','labels'), 
-    dataset_names=('imagenet2012','imagenet_v2','imagenet2012_real'),
-    log_steps=1000,
-  )
-
+    )
+  else:
+    # replace the data and pp with coco_captions for faster debugging
+    config.input.data = dict(name='coco_captions', split='train', data_dir='gs://us-central2-storage/tensorflow_datasets')
+    pp_coco = (f'decode|{pp_image}|'
+              'coco_captions("captions")|choice(inkey="captions", outkey="text")|'
+              f'{tokenizer("text", "labels")}|keep("image", "labels")')
+    config.input.pp = pp_coco
+    config.wandb = True
   return config

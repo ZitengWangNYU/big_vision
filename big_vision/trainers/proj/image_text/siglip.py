@@ -122,16 +122,17 @@ def main(argv):
   u.chrono.inform(measure=mw.measure, write_note=write_note)
 
   # Initialize wandb.
-  wandb.init(
-    project="cambrian_vlm",
-    entity="ziteng_wang",
-    tags=["siglip"],
-    name=workdir.split("/")[-1] if workdir else "siglip_temp_experiment",
-    job_type="train",
-    # id=experiment_id,
-    config=config,
-    resume="allow",
-  )
+  if config.get("wandb", False) and jax.process_index() == 0:
+    wandb.init(
+      project="cambrian_vlm",
+      entity="ziteng_wang",
+      tags=["siglip"],
+      name=workdir.split("/")[-1] if workdir else "siglip_temp_experiment",
+      job_type="train",
+      # id=experiment_id,
+      config=config,
+      resume="allow",
+    )
 
 ################################################################################
 #                                                                              #
@@ -465,7 +466,7 @@ def main(argv):
       with u.chrono.log_timing("z/secs/update0", noop=step > first_step + 1):
         with mesh, nn.logical_axis_rules(sharding_rules):
           train_state, measurements = update_fn(train_state, rng_loop, batch)
-          wandb.log(measurements)
+          if config.get("wandb", False) and jax.process_index() == 0: wandb.log(measurements)
 
     # On the first host, let's always profile a handful of early steps.
     if jax.process_index() == 0:
@@ -515,7 +516,7 @@ def main(argv):
           with mesh, nn.logical_axis_rules(sharding_rules):
             for key, value in evaluator.run(train_state):
               mw.measure(f"{prefix}{key}", jax.device_get(value))
-              wandb.log({f"{prefix}{key}": jax.device_get(value)})
+              if config.get("wandb", False) and jax.process_index() == 0: wandb.log({f"{prefix}{key}": jax.device_get(value)})
         u.chrono.resume()
     mw.step_end()
 
