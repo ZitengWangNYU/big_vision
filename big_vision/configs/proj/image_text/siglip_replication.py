@@ -72,14 +72,11 @@ def get_config(arg=None):
       f'tokenize(max_len={SEQLEN}, model="{TOKENIZERS[VOCAB]}", '
       f'eos="sticky", pad_value=1, inkey="{inkey}", outkey="{outkey}")'
   )
-  pp_image = (f'resize({RES})|flip_lr|randaug(2,10)|value_range(-1,1)')
+  pp_image = (f'resize({RES})|flip_lr|value_range(-1,1)')
   pp_laion400m = (f'decode|{pp_image}|'
                   'choice(inkey="caption", outkey="text")|'
                   f'{tokenizer("text", "labels")}|keep("image", "labels")')
   config.input.pp = pp_laion400m
-
-  config.pp_modules = ['ops_general', 'ops_image', 'ops_text',
-                       'archive.randaug'] 
 
   config.log_training_steps = 50
   config.ckpt_steps = 1000
@@ -129,6 +126,7 @@ def get_config(arg=None):
       dataset_names=('imagenet2012','imagenet_v2','imagenet2012_real'),
       log_steps=1000,
     )
+    config.wandb = True
   else:
     # replace the data and pp with coco_captions for faster debugging
     config.input.data = dict(name='coco_captions', split='train', data_dir='gs://us-central2-storage/tensorflow_datasets')
@@ -136,5 +134,5 @@ def get_config(arg=None):
               'coco_captions("captions")|choice(inkey="captions", outkey="text")|'
               f'{tokenizer("text", "labels")}|keep("image", "labels")')
     config.input.pp = pp_coco
-    config.wandb = True
+    config.wandb = False
   return config
