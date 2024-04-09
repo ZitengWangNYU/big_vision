@@ -459,6 +459,7 @@ def main(argv):
   prof = None  # Keeps track of start/stop of profiler state.
 
   write_note("Starting training loop, compiling the first step...")
+  # if jax.process_index() == 0: jax.profiler.start_trace("/home/austinwang/tensorboard")
   for step, batch in zip(range(first_step + 1, total_steps + 1), train_iter):
     mw.step_start(step)
 
@@ -467,6 +468,8 @@ def main(argv):
         with mesh, nn.logical_axis_rules(sharding_rules):
           train_state, measurements = update_fn(train_state, rng_loop, batch)
           if config.get("wandb", False) and jax.process_index() == 0: wandb.log(measurements)
+    # if jax.process_index() == 0 and step == 100: 
+      # jax.profiler.stop_trace()
 
     # On the first host, let's always profile a handful of early steps.
     if jax.process_index() == 0:
