@@ -3,9 +3,9 @@ r"""SigLIP (https://arxiv.org/abs/2303.15343) Replication.
 Training receipe:
 - train dataset: laion400m/images
   - metadata info for the downloaded data in gcloud storage:
-    - total_num_bytes: 7,927,590,520,336 (7.9TB)
-    - len(shard_lengths): 62,917 (number of tfrecord files)
-    - total_samples: 327,702,052 (328M)
+    - total_num_bytes: 7,977,265,016,918 (8.0TB)
+    - len(shard_lengths): 66,256 (number of tfrecord files)
+    - total_samples: 379,600,897 (328M)
   - train
     - image resolution: 224*224
     - tokenizer: 32K vocabulary sentencepiece; trained on C4 dataset; output has 16 maximum tokens 
@@ -15,7 +15,7 @@ Training receipe:
     - combo: TPUv4-32 & 16,384 & 2.4B (Figure 4); 
   - model
     - image
-      - ViT-B/16 # TO_LEARN: what is ViT-AugReg-B/16
+      - ViT-B/16
       - TO_DETERMINE: head or no head?
       - randomly initialized
       - from scratch
