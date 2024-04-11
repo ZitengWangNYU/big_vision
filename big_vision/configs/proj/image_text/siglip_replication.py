@@ -35,7 +35,9 @@ from ml_collections import ConfigDict
 def get_config(arg=None):
   """The base configuration."""
   arg = bvcc.parse_arg(
-      arg, res=224, runlocal=False, token_len=16, init='', img_head=False, batch_size=1024, debug=True)
+    arg, res=224, runlocal=False, token_len=16, init='', img_head=False, 
+    batch_size=1024, scan=True, fsdp=4, dtype='float32', debug=True,
+  )
   config = ConfigDict()
 
   config.input = {}
@@ -97,8 +99,8 @@ def get_config(arg=None):
   config.model = ConfigDict()
   config.model.image_model = 'vit'
   config.model.text_model = 'proj.image_text.text_transformer'
-  config.model.image = dict(variant=VARIANT, pool_type='map',scan=True,dtype_mm="bfloat16")
-  config.model.text = dict(variant=TXTVARIANT, vocab_size=VOCAB,scan=True)
+  config.model.image = dict(variant=VARIANT, pool_type='map',scan=arg.scan,dtype_mm=arg.dtype)
+  config.model.text = dict(variant=TXTVARIANT, vocab_size=VOCAB,scan=arg.scan)
 
   config.model.out_dim = (None, EMBDIM)  # (image_out_dim, text_out_dim)
   config.model.temperature_init = 10.0
@@ -106,13 +108,13 @@ def get_config(arg=None):
 
   if VARIANT[0] == 'B':
     config.optax_name = 'scale_by_adam'
-    config.optax = dict(b2=0.95,mu_dtype='bfloat16')
+    config.optax = dict(b2=0.95,mu_dtype=arg.dtype)
   else:
     config.optax_name = 'big_vision.scale_by_adafactor'
     config.optax = dict(beta2_cap=0.95)
 
   config.mesh = [("data",-1)]
-  config.sharding_strategy = [('.*', 'fsdp(axis="data", min_size_to_shard_mb=2)')]
+  config.sharding_strategy = [('.*', f'fsdp(axis="data", min_size_to_shard_mb={arg.fsdp})')]
 
   config.lr = 1e-3 if arg.batch_size!=32_768 else 3e-4
   config.wd = 1e-4 if arg.batch_size!=32_768 else 3e-5
