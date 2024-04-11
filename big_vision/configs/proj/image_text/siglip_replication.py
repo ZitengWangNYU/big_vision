@@ -45,7 +45,17 @@ def get_config(arg=None):
   # config.input.pack = True # TO_DETERMINE: pack or not pack? TODO: examine the variance of sequence length, compare num of data before and after packing
 
   # num_tpu_chips/samples_seen/batch_size->ETA,ETA(ckpting): 4/3B/512->17d8h; 4/3B/1024->14d12h,17d; 4/3B/2048->OOM; 4/3B/4096->OOM,18d6h; 4/3B/32_768->OOM
-  step_dict = {512: 5_859_375, 1024: 2_929_688, 2048: 1_464_844, 4096: 732_422, 8_192: 366_211, 12_288: 244_141, 16_384: 183_105, 32_768: 91_553}
+  step_dict = {
+    512: 5_859_375, 
+    1024: 2_929_688, 
+    2048: 1_464_844, 
+    4096: 732_422, 
+    8_192: 366_211, 
+    10_240: 292_969, 
+    12_288: 244_141, 
+    16_384: 183_105, 
+    32_768: 91_553
+  }
   config.total_steps = step_dict[arg.batch_size] if not arg.runlocal else 1
 
   config.init_shapes = [(1, arg.res, arg.res, 3), (1, arg.token_len,)] # TO_LEARN: where is it used?
@@ -74,8 +84,7 @@ def get_config(arg=None):
   )
   pp_image = (f'resize({RES})|flip_lr|value_range(-1,1)')
   pp_laion400m = (f'decode|{pp_image}|'
-                  'choice(inkey="caption", outkey="text")|'
-                  f'{tokenizer("text", "labels")}|keep("image", "labels")')
+                  f'{tokenizer("caption", "labels")}|keep("image", "labels")')
   config.input.pp = pp_laion400m
 
   config.log_training_steps = 50
@@ -88,7 +97,7 @@ def get_config(arg=None):
   config.model = ConfigDict()
   config.model.image_model = 'vit'
   config.model.text_model = 'proj.image_text.text_transformer'
-  config.model.image = dict(variant=VARIANT, pool_type='map',scan=True)
+  config.model.image = dict(variant=VARIANT, pool_type='map',scan=True,dtype_mm="bfloat16")
   config.model.text = dict(variant=TXTVARIANT, vocab_size=VOCAB,scan=True)
 
   config.model.out_dim = (None, EMBDIM)  # (image_out_dim, text_out_dim)
@@ -97,13 +106,13 @@ def get_config(arg=None):
 
   if VARIANT[0] == 'B':
     config.optax_name = 'scale_by_adam'
-    config.optax = dict(b2=0.95)
+    config.optax = dict(b2=0.95,mu_dtype='bfloat16')
   else:
     config.optax_name = 'big_vision.scale_by_adafactor'
     config.optax = dict(beta2_cap=0.95)
 
   config.mesh = [("data",-1)]
-  config.sharding_strategy = [('.*', 'fsdp(axis="data", min_size_to_shard_mb=4)')]
+  config.sharding_strategy = [('.*', 'fsdp(axis="data", min_size_to_shard_mb=2)')]
 
   config.lr = 1e-3 if arg.batch_size!=32_768 else 3e-4
   config.wd = 1e-4 if arg.batch_size!=32_768 else 3e-5
